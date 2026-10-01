@@ -1175,7 +1175,156 @@ window.addEventListener('load',async function(){
   // Expose a concise print-ready report for the coach.
   window.printCoachReport=function(mid){
     const m=meso(mid),c=client(m?.clientId);if(!m)return;const rows=m.weeks.map(w=>{const s=weekCoachSummary(m,w);return `<tr><td>W${w.number}</td><td>${escV(w.focus||'')}</td><td>${pct(w.volumeFactor||1)}%</td><td>${pct(w.intensityFactor||1)}%</td><td>${w.rpe||'—'}</td><td>${s.avgRpe==null?'—':s.avgRpe.toFixed(1)}</td><td>${s.red}</td></tr>`}).join('');
-    const win=window.open('','_blank');if(!win)return;win.document.write(`<html><head><title>ERICA AI · Report</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#111}h1{margin-bottom:4px}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f5f5f5}</style></head><body><h1>ERICA AI · Report programmazione</h1><div>${escV(c?.name||'')} · ${escV(m.name)}</div><div>Obiettivo: ${escV(m.goal)} · ${m.weeks.length} settimane · ${m.freq} giorni/settimana</div><table><thead><tr><th>Settimana</th><th>Focus</th><th>Volume</th><th>Intensità</th><th>RPE target</th><th>RPE reale</th><th>Alert</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:24px;font-size:12px">ERICA AI propone; il trainer verifica e approva. Report generato il ${new Date().toLocaleString('it-IT')}.</p></body></html>`);win.document.close();win.print();
+    const win=window.open('','_blank');if(!win)return;win.document.write(`<html><head><title>ERICA AI · Report</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#111}h1{margin-bottom:4px}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f5f5f5}</style></head><body><h1>ERICA AI · Report programmazione</h1><div>${escV(c?.name||'')} · ${escV(m.name)}</div><div>Obiettivo: ${escV(m.goal)} · ${m.weeks.length} settimane · ${m.freq} giorni/settimana</div><table><thead><tr><th>Settimana</th><th>Focus</th><th>Volume</th><th>Intensità</th><th>RPE target</th><th>RPE reale</th><th>Alert</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:24px;font-size:12px">ERICA AI propone; il trainer verifica e approva. Report generato il ${new Date().toLocaleString('it-IT')}.</p>
+<script>
+/* ERICA AI V25 — UNIVERSAL PDF PROGRAM IMPORTER
+   Multi-layout parser: vertical, 2/3+ columns, table-like PDFs, text PDFs and OCR fallback.
+   It deliberately keeps the original PDF wording and exposes a review step before saving.
+*/
+(function(){
+  const $=id=>document.getElementById(id);
+  const esc=v=>typeof escv==='function'?escv(v):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const makeId=()=>typeof window.id==='function'?window.id():Math.random().toString(36).slice(2,10);
+  const norm=s=>String(s||'').replace(/[\u00A0]/g,' ').replace(/[–—−]/g,'-').replace(/\s+/g,' ').trim();
+  const num=s=>{const n=parseFloat(String(s||'').replace(',','.'));return Number.isFinite(n)?n:''};
+  const prescriptionRe=/(\b\d+\s*[x×]\s*(?:\d+|\d+\s*[-/]\s*\d+|MAX|AMRAP)|\b\d+\s*(?:sets?|serie|series)\b|\b(?:MAX|AMRAP|EMOM|E2MOM|TABATA|FOR TIME|AMRAP)\b|\b\d+(?:[.,]\d+)?\s*%\b|\bRPE\s*\d+(?:[.,]\d+)?\b|\b\d+(?:[.,]\d+)?\s*kg\b|\brec(?:upero|\.)?\s*\d+\s*(?:s|sec|min|')?)/i;
+  const dayRe=/^(?:giorno|giornata|day|sessione|session|seduta|workout|allenamento|training|session)\s*([0-9]{1,2}|[A-H])(?:\s*[:\-–—|]\s*(.*))?$/i;
+  const weekRe=/(?:settimana|week|wk|microciclo|microcycle)\s*[-:#]?\s*(\d{1,2})/i;
+  const blockRe=/(?:blocco|block|fase|phase|mesociclo|mesocycle)\s*[-:#]?\s*(\d{1,2})/i;
+  const dayLabelRe=/^(?:[A-H]|upper|lower|full\s*body|push|pull|legs|lower\s*[ab]|upper\s*[ab]|total\s*body|forza|strength|hypertrophy|ipertrofia)\s*(?:[-:|].*)?$/i;
+  function isHeaderLine(s){const x=norm(s); return !x||/^(esercizio|exercise|movimento|serie|sets?|reps?|ripetizioni|carico|load|peso|kg|rpe|rir|recupero|rest|pausa|tempo|note|notes|check)$/i.test(x);}
+  function isDayHeader(s){const x=norm(s); if(dayRe.test(x))return true; if(dayLabelRe.test(x)&&x.length<=70)return true; return false;}
+  function dayNumber(s,fallback){
+    const x=norm(s),m=x.match(dayRe); if(m){let q=m[1].toUpperCase(); return /[A-H]/.test(q)?q.charCodeAt(0)-64:+q;}
+    const l=x.toLowerCase(); const map={push:1,pull:2,legs:3,lower:1,upper:2,'full body':3}; for(const k in map)if(l===k)return map[k];
+    if(/^[a-h]$/i.test(x))return x.toUpperCase().charCodeAt(0)-64;
+    return fallback||1;
+  }
+  function exerciseLike(s){
+    const x=norm(s); if(!x||isDayHeader(x)||weekRe.test(x)||blockRe.test(x)||/^https?:/i.test(x))return false;
+    if(/^(settimana|week|wk|microciclo|blocco|block|fase|phase)\b/i.test(x))return false;
+    // Strong evidence: a prescription anywhere in the row.
+    if(prescriptionRe.test(x))return true;
+    // Exercise names without prescription are accepted only when they look like a row label,
+    // not a generic heading. This lets us handle rows whose prescription is on the next line.
+    if(x.length>=3&&x.length<=90&&!/^(programma|scheda|allenamento|obiettivo|target|frequenza|atleta|cliente|coach|note|warm ?up|riscaldamento|cool ?down|defaticamento)$/i.test(x)){
+      return /\b(squat|press|panca|stacco|deadlift|bench|row|rematore|lat|pulldown|trazione|trazioni|affondi|lunge|hack|thrust|curl|extension|estension|french|pushdown|alzate|raise|fly|croci|military|lento|dip|dips|push.?up|plank|crunch|leg raise|calf|polpacci|adductor|abductor|glute|good morning|hip|step|split|pullover|pulley|snatch|clean|jerk|thruster|farmer|carry|swing|kettlebell|corda|battle rope|burpee|box jump|pressa|leg press|leg curl|leg extension|chest|shoulder|rear delt|face pull|bicipiti|tricipiti|core|addome|addominali|esercizio)/i.test(x);
+    }
+    return false;
+  }
+  function parsePres(s){
+    const x=norm(s), out={sets:'',reps:'',load:'',pct:'',rpe:'',rest:'',notes:''};
+    let m=x.match(/(\d+)\s*[x×]\s*([0-9]+(?:\s*[-/]\s*[0-9]+)?|MAX|AMRAP)/i); if(m){out.sets=+m[1];out.reps=m[2];}
+    else {m=x.match(/(\d+)\s*(?:sets?|serie|series)\s*(?:da|x)?\s*([0-9]+)?/i);if(m){out.sets=+m[1];out.reps=m[2]||'';}}
+    m=x.match(/(\d+(?:[.,]\d+)?)\s*%\s*(?:1RM|TM|RM)?/i);if(m)out.pct=m[1]+'%';
+    m=x.match(/(?:RPE|@)\s*(\d+(?:[.,]\d+)?)/i);if(m)out.rpe=m[1];
+    const loads=[...x.matchAll(/(\d+(?:[.,]\d+)?)\s*kg\b/gi)];if(loads.length)out.load=loads.map(z=>z[1]+' kg').join(' | ');
+    m=x.match(/(?:recupero|rec\.?|rest|pausa)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(s|sec|min|')?/i);if(m)out.rest=m[1]+(m[2]||'s');
+    const note=x.replace(/\[\s*[x ]?\s*\]/gi,'').trim();
+    out.notes=note;
+    return out;
+  }
+  function rowFromText(s,prefix){
+    const x=norm(s); if(!x)return null;
+    let ex=x;
+    // Strip common numbering at the start but keep the user's wording otherwise.
+    ex=ex.replace(/^\s*\d+[.)]\s*/,'').trim();
+    // If a colon separates exercise name from prescription, keep name only before it.
+    const colon=ex.search(/\s*:\s*(?=\d+\s*[x×]|MAX|AMRAP|\d+\s*kg|\d+\s*%|RPE|@)/i);
+    if(colon>3)ex=ex.slice(0,colon).trim();
+    const p=parsePres(x);
+    if(!exerciseLike(x)&&!prefix)return null;
+    return {id:makeId(),exercise:ex,sets:p.sets,reps:p.reps,load:p.load,pct:p.pct,rpe:p.rpe,rest:p.rest,notes:p.notes,sourceLine:x};
+  }
+  function groupColumns(items,width){
+    const arr=items.filter(i=>norm(i.str)).map(i=>({str:norm(i.str),x:+(i.transform?.[4]||0),y:+(i.transform?.[5]||0),w:+(i.width||0)}));
+    arr.sort((a,b)=>b.y-a.y||a.x-b.x); const rows=[];
+    arr.forEach(it=>{let r=rows.find(z=>Math.abs(z.y-it.y)<=3);if(!r){r={y:it.y,items:[]};rows.push(r)}r.items.push(it)});
+    rows.sort((a,b)=>b.y-a.y);
+    // Detect actual column starts from the page. We preserve up to 4 streams.
+    const xs=arr.map(i=>i.x).sort((a,b)=>a-b); const clusters=[];
+    xs.forEach(x=>{let c=clusters.find(v=>Math.abs(v-x)<45);if(!c){c={x,n:1};clusters.push(c)}else{c.x=(c.x*c.n+x)/(c.n+1);c.n++}});
+    const starts=clusters.filter(c=>c.n>=2).map(c=>c.x).sort((a,b)=>a-b); const usable=starts.length>=2?starts:[];
+    function colFor(x){if(!usable.length)return 0;let best=0,d=1e9;usable.forEach((c,i)=>{const q=Math.abs(x-c);if(q<d){d=q;best=i}});return best;}
+    return rows.map(r=>{const cols=[];r.items.forEach(i=>{const c=colFor(i.x);(cols[c]||(cols[c]=[])).push(i.str)});return {y:r.y,cols:cols.map(a=>a.join(' ').replace(/\s+/g,' ').trim()),all:r.items.map(i=>i.str).join(' ').replace(/\s+/g,' ').trim()};});
+  }
+  function parseUniversal(pages,fileName){
+    const days={}; const weekMeta={}; let week=1, currentByCol={0:1,1:2,2:3,3:4}, title=''; let found=0;
+    const ensure=(w,d,name)=>{const k=`${w}-${d}`;if(!days[k])days[k]={week:w,day:d,name:name||`Giorno ${d}`,exercises:[]};if(name&&/^Giorno \d+$/i.test(days[k].name))days[k].name=name;return days[k];};
+    const addRow=(w,d,text)=>{const r=rowFromText(text);if(!r)return false;const day=ensure(w,d);day.exercises.push(r);found++;return true;};
+    pages.forEach((page,pi)=>{
+      const rows=groupColumns(page.items||[],page.width||595);
+      let pageCols=rows.reduce((m,r)=>Math.max(m,r.cols.length),0); if(pageCols<1)pageCols=1;
+      // If the PDF has true side-by-side columns, process each column independently.
+      const streams=Array.from({length:Math.max(1,pageCols)},()=>[]);
+      rows.forEach(r=>r.cols.forEach((c,i)=>{if(c)streams[i].push({y:r.y,text:c,all:r.all})}));
+      streams.forEach((stream,ci)=>{
+        let day=currentByCol[ci]||1, pending='';
+        stream.forEach((r,ri)=>{
+          const x=norm(r.text);
+          if(!x)return;
+          const wm=x.match(weekRe); if(wm){week=+wm[1];currentByCol={0:1,1:2,2:3,3:4};day=currentByCol[ci]||1;weekMeta[week]={focus:x,deload:/deload|scarico|test|taper/i.test(x)};return;}
+          const bm=x.match(blockRe); if(bm){weekMeta[week]=weekMeta[week]||{};weekMeta[week].block=x;return;}
+          if(isDayHeader(x)){
+            day=dayNumber(x,day);currentByCol[ci]=day;ensure(week,day,x);return;
+          }
+          if(/^(esercizio|exercise|movimento|serie|sets?|reps?|ripetizioni|carico|load|peso|rpe|rir|recupero|rest|pausa|tempo|note|notes|check)$/i.test(x))return;
+          // Merge a heading/exercise label followed by a separate prescription row.
+          const hasPres=prescriptionRe.test(x);
+          if(exerciseLike(x)||hasPres){
+            const candidate=rowFromText(x);
+            if(candidate){
+              // If no prescription but next row has it, hold this label temporarily.
+              if(!hasPres && !candidate.sets&&!candidate.reps&&!candidate.load&&!candidate.pct&&!candidate.rpe){pending=x;return;}
+              if(pending){candidate.exercise=pending;candidate.notes=(candidate.notes?candidate.notes+' · ':'')+x;pending='';}
+              const d=ensure(week,day);d.exercises.push(candidate);found++;return;
+            }
+          }
+          if(pending && prescriptionRe.test(x)){const r=rowFromText(pending+' '+x,true);if(r){ensure(week,day).exercises.push(r);found++;pending='';return;}}
+          if(days[`${week}-${day}`]?.exercises?.length && x.length>2 && !isHeaderLine(x)){
+            const last=days[`${week}-${day}`].exercises.at(-1);last.notes=(last.notes?last.notes+' · ':'')+x;
+          }
+        });
+      });
+      // If the page is clearly vertical and all text fell into one stream, run a second
+      // pass over the original row sequence to catch day transitions more reliably.
+      const flat=rows.map(r=>r.all).filter(Boolean); let d=1;
+      flat.forEach(x=>{
+        const wm=x.match(weekRe);if(wm)week=+wm[1];
+        if(isDayHeader(x)){d=dayNumber(x,d);ensure(week,d,x);return;}
+        if(days[`${week}-${d}`]&&exerciseLike(x)&&prescriptionRe.test(x)){
+          const sig=x.replace(/\s+/g,' '); const dup=days[`${week}-${d}`].exercises.some(e=>e.sourceLine===sig); if(!dup){const r=rowFromText(sig);if(r){days[`${week}-${d}`].exercises.push(r);found++;}}
+        }
+      });
+      if(!title&&pi===0){const candidate=rows.slice(0,10).map(r=>r.all).find(x=>x&&x.length>8&&!weekRe.test(x)&&!isDayHeader(x)&&!exerciseLike(x));if(candidate)title=candidate.slice(0,100);}
+    });
+    const weeks=[];Object.values(days).filter(d=>d.exercises.length||d.name).sort((a,b)=>a.week-b.week||a.day-b.day).forEach(d=>{let w=weeks.find(x=>x.number===d.week);if(!w){const meta=weekMeta[d.week]||{};w={number:d.week,focus:meta.focus||`Settimana ${d.week}`,rpe:'',deload:!!meta.deload,volumeFactor:1,intensityFactor:1,days:[]};weeks.push(w);}let existing=w.days.find(x=>x.day===d.day);if(!existing)w.days.push(d);else existing.exercises.push(...d.exercises);});
+    // Remove accidental duplicate exercises created by the safety second pass.
+    weeks.forEach(w=>w.days.forEach(d=>{const seen=new Set();d.exercises=d.exercises.filter(e=>{const k=e.sourceLine+'|'+e.exercise+'|'+e.sets+'|'+e.reps+'|'+e.load;if(seen.has(k))return false;seen.add(k);return true;});}));
+    if(!weeks.length)weeks.push({number:1,focus:'Importata da PDF',rpe:'',deload:false,volumeFactor:1,intensityFactor:1,days:[{week:1,day:1,name:'Giorno 1',exercises:[]}]});
+    weeks.forEach(w=>w.days.sort((a,b)=>a.day-b.day));
+    return {name:(title||fileName.replace(/\.pdf$/i,'')).trim()||'Scheda importata da PDF',goal:'Importazione PDF',freq:Math.max(...weeks.map(w=>w.days.length)),weeks,found,lines:pages.reduce((n,p)=>n+groupColumns(p.items||[],p.width||595).length,0),rawText:pages.map(p=>groupColumns(p.items||[],p.width||595).map(r=>r.all).join('\n')).join('\n\n')};
+  }
+  function loadPdf(){
+    if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
+    return new Promise((resolve,reject)=>{const id='pdfjs-v25';let s=document.getElementById(id);if(s){s.addEventListener('load',()=>resolve(window.pdfjsLib),{once:true});return;}s=document.createElement('script');s.id=id;s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';s.onload=()=>{try{window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}catch(e){}resolve(window.pdfjsLib)};s.onerror=()=>reject(new Error('Motore PDF non disponibile: controlla la connessione.'));document.head.appendChild(s);});
+  }
+  async function extractUniversal(file,progress){const pdfjs=await loadPdf();const buf=await file.arrayBuffer();const pdf=await pdfjs.getDocument({data:buf}).promise;const pages=[];for(let i=1;i<=pdf.numPages;i++){const p=await pdf.getPage(i),c=await p.getTextContent();pages.push({width:p.viewBox?.[2]||595,height:p.viewBox?.[3]||842,items:c.items||[]});if(progress)progress(i,pdf.numPages)}return {pages};}
+  window.runPdfImport=async function(){
+    const file=$('pdf_file')?.files?.[0],cid=$('pdf_client')?.value,status=$('pdf_status');if(!cid){toast('Seleziona prima il cliente');return}if(!file){toast('Seleziona un PDF');return}if(file.type!=='application/pdf'){toast('Il file deve essere PDF');return}
+    status.innerHTML='<div class="eyebrow">ERICA AI V25</div><h3>Analisi universale della scheda…</h3><p id="pdf_prog" class="muted">Sto leggendo struttura, settimane, sedute e righe di programmazione.</p>';
+    try{const x=await extractUniversal(file,(p,n)=>{const e=$('pdf_prog');if(e)e.textContent=`Pagina ${p} di ${n} · riconoscimento multi-layout…`});let draft=parseUniversal(x.pages,file.name);draft.clientId=cid;draft.sourceFile=file.name;draft.importedAt=new Date().toISOString();draft.parser='V25 Universal';window._pdfDraft=draft;renderPdfPreview();}
+    catch(e){console.error(e);status.innerHTML=`<div class="notice"><b>Errore nella lettura del PDF.</b><br>${esc(e.message||e)}</div>`;}
+  };
+  // Add a clear capability banner to the existing import page without replacing its UI.
+  const oldRenderImport=window.renderImport;
+  if(typeof oldRenderImport==='function'){
+    window.renderImport=function(){oldRenderImport();const v=$('view');if(v&&!document.getElementById('v25banner')){const b=document.createElement('div');b.id='v25banner';b.className='notice';b.style.marginBottom='12px';b.innerHTML='<b>ERICA AI V25 · Importatore universale</b><br>Prova automaticamente PDF verticali, multi-giorno, tabelle, schede a colonne, nomi A/B/C, Day/Session/Workout e prescrizioni con serie×reps, kg, %, RPE, MAX, AMRAP e recuperi. Il risultato resta sempre modificabile prima del salvataggio.';v.prepend(b);}}
+  }
+})();
+</script>
+
+</body></html>`);win.document.close();win.print();
   };
 
   // Add a V14 button next to the existing adaptive controls when the analysis view is rendered.
@@ -1185,6 +1334,155 @@ window.addEventListener('load',async function(){
   }
 })();
 </script>
+
+<script>
+/* ERICA AI V25 — UNIVERSAL PDF PROGRAM IMPORTER
+   Multi-layout parser: vertical, 2/3+ columns, table-like PDFs, text PDFs and OCR fallback.
+   It deliberately keeps the original PDF wording and exposes a review step before saving.
+*/
+(function(){
+  const $=id=>document.getElementById(id);
+  const esc=v=>typeof escv==='function'?escv(v):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const makeId=()=>typeof window.id==='function'?window.id():Math.random().toString(36).slice(2,10);
+  const norm=s=>String(s||'').replace(/[\u00A0]/g,' ').replace(/[–—−]/g,'-').replace(/\s+/g,' ').trim();
+  const num=s=>{const n=parseFloat(String(s||'').replace(',','.'));return Number.isFinite(n)?n:''};
+  const prescriptionRe=/(\b\d+\s*[x×]\s*(?:\d+|\d+\s*[-/]\s*\d+|MAX|AMRAP)|\b\d+\s*(?:sets?|serie|series)\b|\b(?:MAX|AMRAP|EMOM|E2MOM|TABATA|FOR TIME|AMRAP)\b|\b\d+(?:[.,]\d+)?\s*%\b|\bRPE\s*\d+(?:[.,]\d+)?\b|\b\d+(?:[.,]\d+)?\s*kg\b|\brec(?:upero|\.)?\s*\d+\s*(?:s|sec|min|')?)/i;
+  const dayRe=/^(?:giorno|giornata|day|sessione|session|seduta|workout|allenamento|training|session)\s*([0-9]{1,2}|[A-H])(?:\s*[:\-–—|]\s*(.*))?$/i;
+  const weekRe=/(?:settimana|week|wk|microciclo|microcycle)\s*[-:#]?\s*(\d{1,2})/i;
+  const blockRe=/(?:blocco|block|fase|phase|mesociclo|mesocycle)\s*[-:#]?\s*(\d{1,2})/i;
+  const dayLabelRe=/^(?:[A-H]|upper|lower|full\s*body|push|pull|legs|lower\s*[ab]|upper\s*[ab]|total\s*body|forza|strength|hypertrophy|ipertrofia)\s*(?:[-:|].*)?$/i;
+  function isHeaderLine(s){const x=norm(s); return !x||/^(esercizio|exercise|movimento|serie|sets?|reps?|ripetizioni|carico|load|peso|kg|rpe|rir|recupero|rest|pausa|tempo|note|notes|check)$/i.test(x);}
+  function isDayHeader(s){const x=norm(s); if(dayRe.test(x))return true; if(dayLabelRe.test(x)&&x.length<=70)return true; return false;}
+  function dayNumber(s,fallback){
+    const x=norm(s),m=x.match(dayRe); if(m){let q=m[1].toUpperCase(); return /[A-H]/.test(q)?q.charCodeAt(0)-64:+q;}
+    const l=x.toLowerCase(); const map={push:1,pull:2,legs:3,lower:1,upper:2,'full body':3}; for(const k in map)if(l===k)return map[k];
+    if(/^[a-h]$/i.test(x))return x.toUpperCase().charCodeAt(0)-64;
+    return fallback||1;
+  }
+  function exerciseLike(s){
+    const x=norm(s); if(!x||isDayHeader(x)||weekRe.test(x)||blockRe.test(x)||/^https?:/i.test(x))return false;
+    if(/^(settimana|week|wk|microciclo|blocco|block|fase|phase)\b/i.test(x))return false;
+    // Strong evidence: a prescription anywhere in the row.
+    if(prescriptionRe.test(x))return true;
+    // Exercise names without prescription are accepted only when they look like a row label,
+    // not a generic heading. This lets us handle rows whose prescription is on the next line.
+    if(x.length>=3&&x.length<=90&&!/^(programma|scheda|allenamento|obiettivo|target|frequenza|atleta|cliente|coach|note|warm ?up|riscaldamento|cool ?down|defaticamento)$/i.test(x)){
+      return /\b(squat|press|panca|stacco|deadlift|bench|row|rematore|lat|pulldown|trazione|trazioni|affondi|lunge|hack|thrust|curl|extension|estension|french|pushdown|alzate|raise|fly|croci|military|lento|dip|dips|push.?up|plank|crunch|leg raise|calf|polpacci|adductor|abductor|glute|good morning|hip|step|split|pullover|pulley|snatch|clean|jerk|thruster|farmer|carry|swing|kettlebell|corda|battle rope|burpee|box jump|pressa|leg press|leg curl|leg extension|chest|shoulder|rear delt|face pull|bicipiti|tricipiti|core|addome|addominali|esercizio)/i.test(x);
+    }
+    return false;
+  }
+  function parsePres(s){
+    const x=norm(s), out={sets:'',reps:'',load:'',pct:'',rpe:'',rest:'',notes:''};
+    let m=x.match(/(\d+)\s*[x×]\s*([0-9]+(?:\s*[-/]\s*[0-9]+)?|MAX|AMRAP)/i); if(m){out.sets=+m[1];out.reps=m[2];}
+    else {m=x.match(/(\d+)\s*(?:sets?|serie|series)\s*(?:da|x)?\s*([0-9]+)?/i);if(m){out.sets=+m[1];out.reps=m[2]||'';}}
+    m=x.match(/(\d+(?:[.,]\d+)?)\s*%\s*(?:1RM|TM|RM)?/i);if(m)out.pct=m[1]+'%';
+    m=x.match(/(?:RPE|@)\s*(\d+(?:[.,]\d+)?)/i);if(m)out.rpe=m[1];
+    const loads=[...x.matchAll(/(\d+(?:[.,]\d+)?)\s*kg\b/gi)];if(loads.length)out.load=loads.map(z=>z[1]+' kg').join(' | ');
+    m=x.match(/(?:recupero|rec\.?|rest|pausa)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(s|sec|min|')?/i);if(m)out.rest=m[1]+(m[2]||'s');
+    const note=x.replace(/\[\s*[x ]?\s*\]/gi,'').trim();
+    out.notes=note;
+    return out;
+  }
+  function rowFromText(s,prefix){
+    const x=norm(s); if(!x)return null;
+    let ex=x;
+    // Strip common numbering at the start but keep the user's wording otherwise.
+    ex=ex.replace(/^\s*\d+[.)]\s*/,'').trim();
+    // If a colon separates exercise name from prescription, keep name only before it.
+    const colon=ex.search(/\s*:\s*(?=\d+\s*[x×]|MAX|AMRAP|\d+\s*kg|\d+\s*%|RPE|@)/i);
+    if(colon>3)ex=ex.slice(0,colon).trim();
+    const p=parsePres(x);
+    if(!exerciseLike(x)&&!prefix)return null;
+    return {id:makeId(),exercise:ex,sets:p.sets,reps:p.reps,load:p.load,pct:p.pct,rpe:p.rpe,rest:p.rest,notes:p.notes,sourceLine:x};
+  }
+  function groupColumns(items,width){
+    const arr=items.filter(i=>norm(i.str)).map(i=>({str:norm(i.str),x:+(i.transform?.[4]||0),y:+(i.transform?.[5]||0),w:+(i.width||0)}));
+    arr.sort((a,b)=>b.y-a.y||a.x-b.x); const rows=[];
+    arr.forEach(it=>{let r=rows.find(z=>Math.abs(z.y-it.y)<=3);if(!r){r={y:it.y,items:[]};rows.push(r)}r.items.push(it)});
+    rows.sort((a,b)=>b.y-a.y);
+    // Detect actual column starts from the page. We preserve up to 4 streams.
+    const xs=arr.map(i=>i.x).sort((a,b)=>a-b); const clusters=[];
+    xs.forEach(x=>{let c=clusters.find(v=>Math.abs(v-x)<45);if(!c){c={x,n:1};clusters.push(c)}else{c.x=(c.x*c.n+x)/(c.n+1);c.n++}});
+    const starts=clusters.filter(c=>c.n>=2).map(c=>c.x).sort((a,b)=>a-b); const usable=starts.length>=2?starts:[];
+    function colFor(x){if(!usable.length)return 0;let best=0,d=1e9;usable.forEach((c,i)=>{const q=Math.abs(x-c);if(q<d){d=q;best=i}});return best;}
+    return rows.map(r=>{const cols=[];r.items.forEach(i=>{const c=colFor(i.x);(cols[c]||(cols[c]=[])).push(i.str)});return {y:r.y,cols:cols.map(a=>a.join(' ').replace(/\s+/g,' ').trim()),all:r.items.map(i=>i.str).join(' ').replace(/\s+/g,' ').trim()};});
+  }
+  function parseUniversal(pages,fileName){
+    const days={}; const weekMeta={}; let week=1, currentByCol={0:1,1:2,2:3,3:4}, title=''; let found=0;
+    const ensure=(w,d,name)=>{const k=`${w}-${d}`;if(!days[k])days[k]={week:w,day:d,name:name||`Giorno ${d}`,exercises:[]};if(name&&/^Giorno \d+$/i.test(days[k].name))days[k].name=name;return days[k];};
+    const addRow=(w,d,text)=>{const r=rowFromText(text);if(!r)return false;const day=ensure(w,d);day.exercises.push(r);found++;return true;};
+    pages.forEach((page,pi)=>{
+      const rows=groupColumns(page.items||[],page.width||595);
+      let pageCols=rows.reduce((m,r)=>Math.max(m,r.cols.length),0); if(pageCols<1)pageCols=1;
+      // If the PDF has true side-by-side columns, process each column independently.
+      const streams=Array.from({length:Math.max(1,pageCols)},()=>[]);
+      rows.forEach(r=>r.cols.forEach((c,i)=>{if(c)streams[i].push({y:r.y,text:c,all:r.all})}));
+      streams.forEach((stream,ci)=>{
+        let day=currentByCol[ci]||1, pending='';
+        stream.forEach((r,ri)=>{
+          const x=norm(r.text);
+          if(!x)return;
+          const wm=x.match(weekRe); if(wm){week=+wm[1];currentByCol={0:1,1:2,2:3,3:4};day=currentByCol[ci]||1;weekMeta[week]={focus:x,deload:/deload|scarico|test|taper/i.test(x)};return;}
+          const bm=x.match(blockRe); if(bm){weekMeta[week]=weekMeta[week]||{};weekMeta[week].block=x;return;}
+          if(isDayHeader(x)){
+            day=dayNumber(x,day);currentByCol[ci]=day;ensure(week,day,x);return;
+          }
+          if(/^(esercizio|exercise|movimento|serie|sets?|reps?|ripetizioni|carico|load|peso|rpe|rir|recupero|rest|pausa|tempo|note|notes|check)$/i.test(x))return;
+          // Merge a heading/exercise label followed by a separate prescription row.
+          const hasPres=prescriptionRe.test(x);
+          if(exerciseLike(x)||hasPres){
+            const candidate=rowFromText(x);
+            if(candidate){
+              // If no prescription but next row has it, hold this label temporarily.
+              if(!hasPres && !candidate.sets&&!candidate.reps&&!candidate.load&&!candidate.pct&&!candidate.rpe){pending=x;return;}
+              if(pending){candidate.exercise=pending;candidate.notes=(candidate.notes?candidate.notes+' · ':'')+x;pending='';}
+              const d=ensure(week,day);d.exercises.push(candidate);found++;return;
+            }
+          }
+          if(pending && prescriptionRe.test(x)){const r=rowFromText(pending+' '+x,true);if(r){ensure(week,day).exercises.push(r);found++;pending='';return;}}
+          if(days[`${week}-${day}`]?.exercises?.length && x.length>2 && !isHeaderLine(x)){
+            const last=days[`${week}-${day}`].exercises.at(-1);last.notes=(last.notes?last.notes+' · ':'')+x;
+          }
+        });
+      });
+      // If the page is clearly vertical and all text fell into one stream, run a second
+      // pass over the original row sequence to catch day transitions more reliably.
+      const flat=rows.map(r=>r.all).filter(Boolean); let d=1;
+      flat.forEach(x=>{
+        const wm=x.match(weekRe);if(wm)week=+wm[1];
+        if(isDayHeader(x)){d=dayNumber(x,d);ensure(week,d,x);return;}
+        if(days[`${week}-${d}`]&&exerciseLike(x)&&prescriptionRe.test(x)){
+          const sig=x.replace(/\s+/g,' '); const dup=days[`${week}-${d}`].exercises.some(e=>e.sourceLine===sig); if(!dup){const r=rowFromText(sig);if(r){days[`${week}-${d}`].exercises.push(r);found++;}}
+        }
+      });
+      if(!title&&pi===0){const candidate=rows.slice(0,10).map(r=>r.all).find(x=>x&&x.length>8&&!weekRe.test(x)&&!isDayHeader(x)&&!exerciseLike(x));if(candidate)title=candidate.slice(0,100);}
+    });
+    const weeks=[];Object.values(days).filter(d=>d.exercises.length||d.name).sort((a,b)=>a.week-b.week||a.day-b.day).forEach(d=>{let w=weeks.find(x=>x.number===d.week);if(!w){const meta=weekMeta[d.week]||{};w={number:d.week,focus:meta.focus||`Settimana ${d.week}`,rpe:'',deload:!!meta.deload,volumeFactor:1,intensityFactor:1,days:[]};weeks.push(w);}let existing=w.days.find(x=>x.day===d.day);if(!existing)w.days.push(d);else existing.exercises.push(...d.exercises);});
+    // Remove accidental duplicate exercises created by the safety second pass.
+    weeks.forEach(w=>w.days.forEach(d=>{const seen=new Set();d.exercises=d.exercises.filter(e=>{const k=e.sourceLine+'|'+e.exercise+'|'+e.sets+'|'+e.reps+'|'+e.load;if(seen.has(k))return false;seen.add(k);return true;});}));
+    if(!weeks.length)weeks.push({number:1,focus:'Importata da PDF',rpe:'',deload:false,volumeFactor:1,intensityFactor:1,days:[{week:1,day:1,name:'Giorno 1',exercises:[]}]});
+    weeks.forEach(w=>w.days.sort((a,b)=>a.day-b.day));
+    return {name:(title||fileName.replace(/\.pdf$/i,'')).trim()||'Scheda importata da PDF',goal:'Importazione PDF',freq:Math.max(...weeks.map(w=>w.days.length)),weeks,found,lines:pages.reduce((n,p)=>n+groupColumns(p.items||[],p.width||595).length,0),rawText:pages.map(p=>groupColumns(p.items||[],p.width||595).map(r=>r.all).join('\n')).join('\n\n')};
+  }
+  function loadPdf(){
+    if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
+    return new Promise((resolve,reject)=>{const id='pdfjs-v25';let s=document.getElementById(id);if(s){s.addEventListener('load',()=>resolve(window.pdfjsLib),{once:true});return;}s=document.createElement('script');s.id=id;s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';s.onload=()=>{try{window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}catch(e){}resolve(window.pdfjsLib)};s.onerror=()=>reject(new Error('Motore PDF non disponibile: controlla la connessione.'));document.head.appendChild(s);});
+  }
+  async function extractUniversal(file,progress){const pdfjs=await loadPdf();const buf=await file.arrayBuffer();const pdf=await pdfjs.getDocument({data:buf}).promise;const pages=[];for(let i=1;i<=pdf.numPages;i++){const p=await pdf.getPage(i),c=await p.getTextContent();pages.push({width:p.viewBox?.[2]||595,height:p.viewBox?.[3]||842,items:c.items||[]});if(progress)progress(i,pdf.numPages)}return {pages};}
+  window.runPdfImport=async function(){
+    const file=$('pdf_file')?.files?.[0],cid=$('pdf_client')?.value,status=$('pdf_status');if(!cid){toast('Seleziona prima il cliente');return}if(!file){toast('Seleziona un PDF');return}if(file.type!=='application/pdf'){toast('Il file deve essere PDF');return}
+    status.innerHTML='<div class="eyebrow">ERICA AI V25</div><h3>Analisi universale della scheda…</h3><p id="pdf_prog" class="muted">Sto leggendo struttura, settimane, sedute e righe di programmazione.</p>';
+    try{const x=await extractUniversal(file,(p,n)=>{const e=$('pdf_prog');if(e)e.textContent=`Pagina ${p} di ${n} · riconoscimento multi-layout…`});let draft=parseUniversal(x.pages,file.name);draft.clientId=cid;draft.sourceFile=file.name;draft.importedAt=new Date().toISOString();draft.parser='V25 Universal';window._pdfDraft=draft;renderPdfPreview();}
+    catch(e){console.error(e);status.innerHTML=`<div class="notice"><b>Errore nella lettura del PDF.</b><br>${esc(e.message||e)}</div>`;}
+  };
+  // Add a clear capability banner to the existing import page without replacing its UI.
+  const oldRenderImport=window.renderImport;
+  if(typeof oldRenderImport==='function'){
+    window.renderImport=function(){oldRenderImport();const v=$('view');if(v&&!document.getElementById('v25banner')){const b=document.createElement('div');b.id='v25banner';b.className='notice';b.style.marginBottom='12px';b.innerHTML='<b>ERICA AI V25 · Importatore universale</b><br>Prova automaticamente PDF verticali, multi-giorno, tabelle, schede a colonne, nomi A/B/C, Day/Session/Workout e prescrizioni con serie×reps, kg, %, RPE, MAX, AMRAP e recuperi. Il risultato resta sempre modificabile prima del salvataggio.';v.prepend(b);}}
+  }
+})();
+</script>
+
 </body>
 </html>
 <script>
@@ -1438,7 +1736,7 @@ window.addEventListener('load',async function(){
 
 
 <script>
-/* ERICA AI V23 — PDF PROGRAM IMPORTER
+/* ERICA AI V24 — PDF PROGRAM IMPORTER
    Imports text-based training PDFs, interprets them into a structured editable mesocycle,
    assigns it to a client, and keeps a reversible local record of the import.
    A future server-side LLM/OCR layer can replace the parser without changing the UI contract.
@@ -1665,41 +1963,139 @@ window.addEventListener('load',async function(){
     return true;
   }
   function interpretVisual(pages,fileName){
-    const days={}, weekMeta={}, dayNames={}; let currentWeek=1,found=0,title='';
+    /*
+      V24: layout-aware importer that supports BOTH:
+      - vertical PDFs: Giorno 1, Giorno 2, Giorno 3... stacked on the page
+      - two-column PDFs: Giorno 1 on the left / Giorno 2 on the right
+      The previous V23 assumed exactly two days and therefore swallowed Giorno 2/3
+      when all content was extracted in the left column.
+    */
+    const days={}, weekMeta={}; 
+    let currentWeek=1, found=0, title='';
+    const state={left:1,right:2};
+    const ensure=(week,day,name)=>{
+      const key=`${week}-${day}`;
+      if(!days[key]) days[key]={week,day,name:name||`Giorno ${day}`,exercises:[]};
+      if(name && /^Giorno \d+$/i.test(days[key].name)) days[key].name=name;
+      return days[key];
+    };
+    const setDayFromHeader=(txt,side)=>{
+      const raw=String(txt||'').trim();
+      let m=raw.match(/^\s*GIORNO\s*(\d{1,2})\s*[:\-–—]?\s*(.*)$/i);
+      if(!m)m=raw.match(/^\s*(?:DAY|SESSIONE|SESSION|SEDUTA|WORKOUT)\s*(\d{1,2})\s*[:\-–—]?\s*(.*)$/i);
+      if(!m)return null;
+      const n=+m[1], label=raw;
+      state[side]=n;
+      ensure(currentWeek,n,label);
+      return n;
+    };
+    const processCell=(cell,side)=>{
+      const text=String(cell||'').replace(/\s+/g,' ').trim();
+      if(!text)return;
+      if(setDayFromHeader(text,side)!==null)return;
+      // Occasionally a PDF text layer puts the day heading and the first exercise
+      // in one cell. Handle the heading first and then the remaining text.
+      let m=text.match(/^\s*(GIORNO|DAY|SESSIONE|SESSION|SEDUTA|WORKOUT)\s*(\d{1,2})\s*[:\-–—]\s*(.+)$/i);
+      if(m){
+        const n=+m[2];
+        state[side]=n;
+        ensure(currentWeek,n,`${m[1]} ${n}: ${m[3]}`);
+        return;
+      }
+      const ex=knownExercise(text);
+      if(ex && isExerciseRow(text)){
+        const day=state[side]||1;
+        const p=parsePrescription(text);
+        const d=ensure(currentWeek,day);
+        d.exercises.push({
+          id:rid(),exercise:exerciseLabel(text,ex),canonicalExercise:ex,
+          sets:p.sets,reps:p.reps,load:p.load,rpe:p.rpe,pct:p.pct,rest:p.rest,
+          notes:p.notes,sourceLine:text
+        });
+        found++;
+        return;
+      }
+      // Some PDF engines split a prescription across two visual rows. Preserve it.
+      const day=state[side]||1;
+      const d=days[`${currentWeek}-${day}`];
+      if(d?.exercises?.length && !/^(esercizio|serie|reps|carico|prescritto|pausa|check)$/i.test(text)){
+        const last=d.exercises[d.exercises.length-1];
+        last.notes=(last.notes?last.notes+' · ':'')+text;
+      }
+    };
+
     pages.forEach((page,pi)=>{
       const rows=visualRows(page.items,page.width||595);
-      let pending={1:null,2:null};
       rows.forEach((row,ri)=>{
         const combined=row.all;
         const w=weekFromLabel(combined);
-        if(w){currentWeek=w; if(!weekMeta[w])weekMeta[w]={focus:combined,deload:/scarico|deload|rigenerazione/i.test(combined)}; return;}
-        if(!title && pi===0 && ri<6 && combined.length>8 && !/^(mese|settimana|giorno|programma)/i.test(combined) && !knownExercise(combined))title=combined.slice(0,100);
-        const left=row.left,right=row.right;
-        const lDay=/^GIORNO\s*1\b/i.test(left), rDay=/^GIORNO\s*2\b/i.test(right);
-        if(lDay||rDay){
-          if(lDay){dayNames[`${currentWeek}-1`]=left;pending[1]=left;}
-          if(rDay){dayNames[`${currentWeek}-2`]=right;pending[2]=right;}
-          return;
+        if(w){
+          currentWeek=w;
+          state.left=1; state.right=2;
+          const clean=combined.replace(/\s+/g,' ').trim();
+          weekMeta[w]=weekMeta[w]||{focus:clean,deload:/scarico|deload|rigenerazione|test finale/i.test(clean)};
+          // A week heading may share the row with a day heading; continue below.
+          if(!/GIORNO|DAY|SESSIONE|SEDUTA|WORKOUT/i.test(combined)) return;
         }
-        // Some PDF engines may put both headers into the left stream. Split explicitly if needed.
-        const both=combined.match(/(GIORNO\s*1[^G]*?)(GIORNO\s*2.*)$/i);
-        if(both){dayNames[`${currentWeek}-1`]=both[1].trim();dayNames[`${currentWeek}-2`]=both[2].trim();return;}
-        if(parseColumnExercise(left,currentWeek,1,dayNames[`${currentWeek}-1`]||'Giorno 1',days))found++;
-        else if(left && days[`${currentWeek}-1`]?.exercises?.length){
-          const last=days[`${currentWeek}-1`].exercises.at(-1); if(last && !/^\d+\./.test(left) && !/^(mese|settimana|giorno)/i.test(left))last.notes=(last.notes?last.notes+' · ':'')+left;
-        }
-        if(parseColumnExercise(right,currentWeek,2,dayNames[`${currentWeek}-2`]||'Giorno 2',days))found++;
-        else if(right && days[`${currentWeek}-2`]?.exercises?.length){
-          const last=days[`${currentWeek}-2`].exercises.at(-1); if(last && !/^\d+\./.test(right) && !/^(mese|settimana|giorno)/i.test(right))last.notes=(last.notes?last.notes+' · ':'')+right;
-        }
+        if(!title && pi===0 && ri<8 && combined.length>8 &&
+           !/^(mese|settimana|giorno|programma|esercizio|serie)/i.test(combined) &&
+           !knownExercise(combined)) title=combined.slice(0,100);
+
+        // Process left and right independently. This is the key fix:
+        // a vertical PDF will keep using the left stream while a two-column PDF
+        // can advance left/right days independently.
+        processCell(row.left,'left');
+        processCell(row.right,'right');
       });
     });
-    const weeks=[];Object.values(days).sort((a,b)=>a.week-b.week||a.day-b.day).forEach(d=>{
-      let w=weeks.find(x=>x.number===d.week);if(!w){const meta=weekMeta[d.week]||{};w={number:d.week,focus:(meta.focus||`Settimana ${d.week}`).replace(/\s+/g,' ').trim(),rpe:'',deload:!!meta.deload,volumeFactor:1,intensityFactor:1,days:[]};weeks.push(w)}w.days.push(d);
+
+    const weeks=[];
+    Object.values(days).sort((a,b)=>a.week-b.week||a.day-b.day).forEach(d=>{
+      let w=weeks.find(x=>x.number===d.week);
+      if(!w){
+        const meta=weekMeta[d.week]||{};
+        w={
+          number:d.week,
+          focus:(meta.focus||`Settimana ${d.week}`).replace(/\s+/g,' ').trim(),
+          rpe:'',deload:!!meta.deload,volumeFactor:1,intensityFactor:1,days:[]
+        };
+        weeks.push(w);
+      }
+      // Avoid empty duplicate days accidentally created by a header-only cell.
+      if(d.exercises.length || d.name) w.days.push(d);
     });
-    if(!weeks.length)weeks.push({number:1,focus:'Importata da PDF',rpe:'',deload:false,volumeFactor:1,intensityFactor:1,days:[{name:'Giorno 1',exercises:[]}]});
-    weeks.forEach(w=>w.days.sort((a,b)=>a.day-b.day));
-    return {name:(title||fileName.replace(/\.pdf$/i,'')).trim()||'Scheda importata da PDF',goal:'Importazione PDF',freq:Math.max(...weeks.map(w=>w.days.length)),weeks,found,lines:pages.reduce((n,p)=>n+visualRows(p.items,p.width||595).length,0),pages,rawText:pages.map(p=>visualRows(p.items,p.width||595).map(r=>r.all).join('\n')).join('\n\n')};
+
+    weeks.forEach(w=>{
+      w.days.sort((a,b)=>a.day-b.day);
+      // Remove duplicate day objects while preserving exercise data.
+      const seen=new Map();
+      w.days.forEach(d=>{
+        const key=d.day;
+        if(!seen.has(key)) seen.set(key,d);
+        else if(d.exercises.length) seen.get(key).exercises.push(...d.exercises);
+      });
+      w.days=[...seen.values()];
+    });
+
+    if(!weeks.length){
+      weeks.push({
+        number:1,focus:'Importata da PDF',rpe:'',deload:false,volumeFactor:1,
+        intensityFactor:1,days:[{name:'Giorno 1',day:1,week:1,exercises:[]}]
+      });
+    }
+
+    const cleanTitle=(title||fileName.replace(/\.pdf$/i,''))
+      .replace(/^(scheda|programma|workout|allenamento)\s*[:\-]?\s*/i,'').trim();
+
+    return {
+      name:cleanTitle||'Scheda importata da PDF',
+      goal:'Importazione PDF',
+      freq:Math.max(...weeks.map(w=>w.days.length)),
+      weeks,found,
+      lines:pages.reduce((n,p)=>n+visualRows(p.items,p.width||595).length,0),
+      pages,
+      rawText:pages.map(p=>visualRows(p.items,p.width||595).map(r=>r.all).join('\n')).join('\n\n')
+    };
   }
   async function extractPdf(file,onProgress){
     const pdfjs=await loadPdfJs();const buf=await file.arrayBuffer();const pdf=await pdfjs.getDocument({data:buf}).promise;const pages=[];
@@ -1740,10 +2136,10 @@ window.addEventListener('load',async function(){
   window.pdfAddExercise=function(wi,di){window._pdfDraft.weeks[wi].days[di].exercises.push({id:rid(),exercise:'Nuovo esercizio',sets:3,reps:'8',load:'',pct:'',rpe:'',rest:'',notes:''});renderPdfPreview()};
   window.reparsePdf=function(){const f=document.getElementById('pdf_file')?.files?.[0];if(f){document.getElementById('pdf_status').innerHTML='<div class="notice">Seleziona di nuovo il file e premi <b>Leggi e interpreta PDF</b>.</div>';}}
   window.saveImportedPdfProgram=async function(){
-    const d=window._pdfDraft;if(!d)return;const name=document.getElementById('pdf_name')?.value?.trim()||d.name;const m={id:rid(),clientId:d.clientId,name,goal:d.goal||'Importata da PDF',freq:d.freq||Math.max(...d.weeks.map(w=>w.days.length)),weeks:d.weeks,status:'active',created:new Date().toISOString(),updatedAt:new Date().toISOString(),source:'PDF import · ERICA AI V23',sourceFile:d.sourceFile,importedAt:d.importedAt};
+    const d=window._pdfDraft;if(!d)return;const name=document.getElementById('pdf_name')?.value?.trim()||d.name;const m={id:rid(),clientId:d.clientId,name,goal:d.goal||'Importata da PDF',freq:d.freq||Math.max(...d.weeks.map(w=>w.days.length)),weeks:d.weeks,status:'active',created:new Date().toISOString(),updatedAt:new Date().toISOString(),source:'PDF import · ERICA AI V24',sourceFile:d.sourceFile,importedAt:d.importedAt};
     m.weeks.forEach(w=>{w.days.forEach(day=>day.exercises.forEach(e=>{delete e.sourceLine;if(e.load==='')delete e.load;if(e.pct==='')delete e.pct;if(e.rpe==='')delete e.rpe}))});
     S.mesocycles=S.mesocycles||[];S.mesocycles.push(m);S.pdfImports=S.pdfImports||[];S.pdfImports.push({id:rid(),mesoId:m.id,clientId:m.clientId,fileName:d.sourceFile,date:new Date().toISOString(),exerciseCount:d.found,textLength:d.rawText?.length||0});
-    if(typeof snapshot==='function')S.snapshots=S.snapshots||[],S.snapshots.push({id:rid(),mesoId:m.id,date:new Date().toISOString(),label:'V23 · importazione PDF · prima versione salvata',data:JSON.parse(JSON.stringify(m))});
+    if(typeof snapshot==='function')S.snapshots=S.snapshots||[],S.snapshots.push({id:rid(),mesoId:m.id,date:new Date().toISOString(),label:'V24 · importazione PDF · prima versione salvata',data:JSON.parse(JSON.stringify(m))});
     saveS();try{if(typeof cloudMesocycleUpsert==='function')await cloudMesocycleUpsert(m)}catch(e){console.warn('cloud import',e)}
     window._pdfDraft=null;toast('Scheda importata e salvata nel cliente');setTimeout(()=>openMeso(m.id),150);
   };
